@@ -1,0 +1,65 @@
+{
+  "name": "amidelusional",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive dating-pool calculator with correlated trait filters (entertainment model)",
+  "type": "module",
+  "author": "GrizJW",
+  "license": "MIT",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "electron:dev": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder --win --publish never",
+    "electron:build:dir": "npm run build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "typescript": "~5.9.3",
+    "vite": "^6.0.11"
+  },
+  "build": {
+    "appId": "com.grizjw.amidelusional",
+    "productName": "amIdelusional",
+    "copyright": "Copyright © 2026 GrizJW",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+    },
+    "npmRebuild": false,
+    "nodeGypRebuild": false
+  }
+}
