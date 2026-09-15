@@ -29,6 +29,10 @@ npm run electron:build        # Windows x64 portable under release/
 
 Requires a Windows build host (or CI) for the portable `.exe`. Artifact name: `amIdelusional-0.1.0-x64-portable.exe`.
 
+A GitHub Actions workflow template lives at `electron/ci-release-windows.yml` (copy into `.github/workflows/` if your token has the `workflow` scope).
+
+**Release:** https://github.com/GrizJW/amIdelusional/releases/tag/v0.1.0
+
 ## How correlation works
 
 1. Generate **100,000** synthetic US adult women once (deterministic seed `20260915`).
