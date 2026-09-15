@@ -1,3 +1,7 @@
+import type { CityId } from './cities';
+
+export type { CityId };
+
 export type HairColor =
   | 'black'
   | 'brown'
@@ -23,30 +27,119 @@ export type Education =
 
 export type CupSize = 'AA' | 'A' | 'B' | 'C' | 'D' | 'DD' | 'DDD+';
 
-/** Mutually exclusive race/ethnicity filter set (ACS-style for Tyler city). */
+/**
+ * Mutually exclusive race/ethnicity filter set (ACS-style).
+ * Asian = East/Southeast Asian (excludes Asian Indian).
+ * Indian = Asian Indian / South Asian Indian — its own bucket.
+ */
 export type Ethnicity =
   | 'white_nh'
   | 'black'
   | 'hispanic'
   | 'asian'
+  | 'indian'
   | 'other';
 
-export interface Woman {
-  age: number;
-  heightIn: number;
-  weightLb: number;
-  bmi: number;
-  ethnicity: Ethnicity;
-  hair: HairColor;
-  eye: EyeColor;
-  education: Education;
-  incomeUsd: number;
-  tattoos: boolean;
-  facePiercings: boolean;
-  bodyPiercings: boolean;
-  cup: CupSize;
-  /** Approximate dating availability: unmarried (never married, divorced, separated, widowed). */
-  available: boolean;
+export const ETHNICITY_INDEX: Record<Ethnicity, number> = {
+  white_nh: 0,
+  black: 1,
+  hispanic: 2,
+  asian: 3,
+  indian: 4,
+  other: 5,
+};
+
+export const ETHNICITY_FROM_INDEX: Ethnicity[] = [
+  'white_nh',
+  'black',
+  'hispanic',
+  'asian',
+  'indian',
+  'other',
+];
+
+export const HAIR_INDEX: Record<HairColor, number> = {
+  black: 0,
+  brown: 1,
+  blonde: 2,
+  red: 3,
+  gray: 4,
+  other: 5,
+};
+
+export const HAIR_FROM_INDEX: HairColor[] = [
+  'black',
+  'brown',
+  'blonde',
+  'red',
+  'gray',
+  'other',
+];
+
+export const EYE_INDEX: Record<EyeColor, number> = {
+  brown: 0,
+  blue: 1,
+  hazel: 2,
+  green: 3,
+  gray: 4,
+  other: 5,
+};
+
+export const EYE_FROM_INDEX: EyeColor[] = [
+  'brown',
+  'blue',
+  'hazel',
+  'green',
+  'gray',
+  'other',
+];
+
+export const EDUCATION_INDEX: Record<Education, number> = {
+  less_than_hs: 0,
+  hs: 1,
+  some_college: 2,
+  bachelors: 3,
+  graduate: 4,
+};
+
+export const EDUCATION_FROM_INDEX: Education[] = [
+  'less_than_hs',
+  'hs',
+  'some_college',
+  'bachelors',
+  'graduate',
+];
+
+export const CUP_FROM_INDEX: CupSize[] = [
+  'AA',
+  'A',
+  'B',
+  'C',
+  'D',
+  'DD',
+  'DDD+',
+];
+
+export const FLAG_TATTOOS = 1 << 0;
+export const FLAG_FACE = 1 << 1;
+export const FLAG_BODY = 1 << 2;
+/** Available ≈ unmarried AND age ≥ 18. Minors never available. */
+export const FLAG_AVAILABLE = 1 << 3;
+
+/** Structure-of-arrays synthetic city-women population (1 row = 1 woman). */
+export interface PackedPop {
+  cityId: CityId;
+  n: number;
+  age: Uint8Array;
+  heightTenthIn: Uint16Array;
+  weightLb: Uint16Array;
+  ethnicity: Uint8Array;
+  hair: Uint8Array;
+  eye: Uint8Array;
+  education: Uint8Array;
+  incomeUsd: Uint32Array;
+  flags: Uint8Array;
+  cup: Uint8Array;
 }
 
 export interface Filters {
@@ -54,8 +147,6 @@ export interface Filters {
   ageMax: number;
   heightMinIn: number;
   heightMaxIn: number;
-  weightMinLb: number;
-  weightMaxLb: number;
   ethnicity: Ethnicity[] | null;
   hair: HairColor[] | null;
   eye: EyeColor[] | null;
@@ -66,8 +157,10 @@ export interface Filters {
   facePiercings: 'any' | 'yes' | 'no';
   bodyPiercings: 'any' | 'yes' | 'no';
   cup: CupSize[] | null;
-  region: 'tyler_tx';
+  region: CityId;
   availableOnly: boolean;
+  weightMinLb: number;
+  weightMaxLb: number;
 }
 
 export interface FilterResult {
@@ -75,9 +168,9 @@ export interface FilterResult {
   matching: number;
   percent: number;
   totalGenerated: number;
-  /** City-scaled estimate of available adult women in Tyler matching filters. */
+  /** Absolute matching women in this city (N = city female count, so 1:1). */
   cityScaledMatching: number;
-  /** City-scaled estimate of Tyler adult available women in the age band. */
+  /** Absolute available (or age-band) women in this city. */
   cityScaledAvailable: number;
   breakdown: BreakdownItem[];
 }
@@ -95,7 +188,8 @@ export const ETHNICITY_OPTIONS: { value: Ethnicity; label: string }[] = [
   { value: 'white_nh', label: 'White (non-Hispanic)' },
   { value: 'black', label: 'Black / African American' },
   { value: 'hispanic', label: 'Hispanic or Latino' },
-  { value: 'asian', label: 'Asian' },
+  { value: 'asian', label: 'Asian (East / Southeast)' },
+  { value: 'indian', label: 'Indian (Asian Indian)' },
   { value: 'other', label: 'Two or more / other' },
 ];
 

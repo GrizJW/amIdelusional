@@ -1,318 +1,207 @@
-import type {
-  CupSize,
-  Education,
-  Ethnicity,
-  EyeColor,
-  HairColor,
-  Woman,
-} from './types';
-import { clamp, lerp, mulberry32, randn, sampleCategorical } from './rng';
+import type { CityConfig, CityId } from './cities';
+import { CITIES, getCity } from './cities';
+import { clamp, lerp, mulberry32, randn } from './rng';
 import {
-  TYLER_ACS_ETHNICITY,
-  TYLER_ACS_FEMALE_COUNT,
-  TYLER_ADULT_SHARE,
-} from './sources';
+  CUP_FROM_INDEX,
+  ETHNICITY_INDEX,
+  FLAG_AVAILABLE,
+  FLAG_BODY,
+  FLAG_FACE,
+  FLAG_TATTOOS,
+  type PackedPop,
+} from './types';
 
-export const POPULATION_SIZE = 100_000;
 export const POPULATION_SEED = 20260915;
 
-/** Estimated Tyler adult (18+) women used to scale synthetic % → city counts. */
-export const TYLER_ADULT_WOMEN_ESTIMATE = Math.round(
-  TYLER_ACS_FEMALE_COUNT * TYLER_ADULT_SHARE,
-);
+/** @deprecated Fixed-N sample is gone; N = selected city's female count. */
+export const POPULATION_SIZE = 0;
 
-/** Generate a large synthetic Tyler, TX adult women population with chained conditionals. */
-export function generatePopulation(
-  n = POPULATION_SIZE,
-  seed = POPULATION_SEED,
-): Woman[] {
-  const rng = mulberry32(seed);
-  const out: Woman[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    out[i] = generateOne(rng);
-  }
-  return out;
-}
+const CHUNK = 24_576;
 
-function generateOne(rng: () => number): Woman {
-  // Age 18–65 (adults only). Mild skew toward younger adults.
-  const age = sampleAge(rng);
+const CITY_SEED: Record<CityId, number> = {
+  tyler_tx: POPULATION_SEED,
+  houston_tx: POPULATION_SEED + 1,
+  dallas_tx: POPULATION_SEED + 2,
+};
 
-  // Ethnicity first (Tyler ACS mutually exclusive shares) → hair/eyes.
-  const ethnicity = sampleEthnicity(rng);
-
-  // Height: NHANES-ish adult US women ~ 63.7 in, SD ~ 2.7 (national anthropometrics)
-  const heightIn = clamp(63.7 + 2.7 * randn(rng), 54, 78);
-
-  // BMI: overall mean ~28–29 for US adult women (NHANES era); log-ish right skew
-  const bmiMean = 27.5 + 0.05 * (age - 35);
-  const bmiSd = 6.2;
-  let bmi = bmiMean + bmiSd * randn(rng);
-  bmi = clamp(bmi, 16.5, 55);
-
-  const heightM = heightIn * 0.0254;
-  const weightKg = bmi * heightM * heightM;
-  const weightLb = clamp(weightKg * 2.20462262, 80, 420);
-
-  const hair = sampleHair(rng, age, ethnicity);
-  const eye = sampleEye(rng, hair, ethnicity);
-  const education = sampleEducation(rng, age);
-  const incomeUsd = sampleIncome(rng, education, age);
-  const available = sampleAvailable(rng, age);
-
-  const tattoos = rng() < tattooProb(age, education);
-  const facePiercings = rng() < facePiercingProb(age);
-  const bodyPiercings = rng() < bodyPiercingProb(age, tattoos);
-
-  const cup = sampleCup(rng, bmi, weightLb);
-
+function allocPop(cityId: CityId, n: number): PackedPop {
   return {
-    age: Math.round(age),
-    heightIn: Math.round(heightIn * 10) / 10,
-    weightLb: Math.round(weightLb),
-    bmi: Math.round(bmi * 10) / 10,
-    ethnicity,
-    hair,
-    eye,
-    education,
-    incomeUsd: Math.round(incomeUsd / 100) * 100,
-    tattoos,
-    facePiercings,
-    bodyPiercings,
-    cup,
-    available,
+    cityId,
+    n,
+    age: new Uint8Array(n),
+    heightTenthIn: new Uint16Array(n),
+    weightLb: new Uint16Array(n),
+    ethnicity: new Uint8Array(n),
+    hair: new Uint8Array(n),
+    eye: new Uint8Array(n),
+    education: new Uint8Array(n),
+    incomeUsd: new Uint32Array(n),
+    flags: new Uint8Array(n),
+    cup: new Uint8Array(n),
   };
 }
 
-function sampleAge(rng: () => number): number {
+function ethnicityCdf(city: CityConfig): Float64Array {
+  const e = city.ethnicity;
+  const c = new Float64Array(6);
+  c[0] = e.white_nh;
+  c[1] = c[0] + e.black;
+  c[2] = c[1] + e.hispanic;
+  c[3] = c[2] + e.asian;
+  c[4] = c[3] + e.indian;
+  c[5] = 1;
+  return c;
+}
+
+function sampleCdf6(rng: () => number, cdf: Float64Array): number {
+  const r = rng();
+  if (r <= cdf[0]!) return 0;
+  if (r <= cdf[1]!) return 1;
+  if (r <= cdf[2]!) return 2;
+  if (r <= cdf[3]!) return 3;
+  if (r <= cdf[4]!) return 4;
+  return 5;
+}
+
+function sampleAge(
+  rng: () => number,
+  under18: number,
+  age65: number,
+): number {
   const u = rng();
-  if (u < 0.42) return 18 + rng() * 12; // 18–30
-  if (u < 0.72) return 30 + rng() * 15; // 30–45
-  if (u < 0.9) return 45 + rng() * 12; // 45–57
-  return 57 + rng() * 8; // 57–65
+  if (u < under18) return (rng() * 18) | 0; // 0–17
+  if (u < under18 + age65) return 65 + ((rng() * 26) | 0); // 65–90
+  const a = rng();
+  if (a < 0.42) return (18 + rng() * 12) | 0;
+  if (a < 0.72) return (30 + rng() * 15) | 0;
+  if (a < 0.9) return (45 + rng() * 12) | 0;
+  return (57 + rng() * 8) | 0;
 }
 
-function sampleEthnicity(rng: () => number): Ethnicity {
-  return sampleCategorical(rng, [
-    { value: 'white_nh', p: TYLER_ACS_ETHNICITY.white_nh },
-    { value: 'black', p: TYLER_ACS_ETHNICITY.black },
-    { value: 'hispanic', p: TYLER_ACS_ETHNICITY.hispanic },
-    { value: 'asian', p: TYLER_ACS_ETHNICITY.asian },
-    { value: 'other', p: TYLER_ACS_ETHNICITY.other },
-  ]);
-}
+/**
+ * Hair bases by ethnicity (6 colors: black, brown, blonde, red, gray, other).
+ * Indian (Asian Indian) is its own row — not East/Southeast Asian.
+ */
+const HAIR_BASE: number[][] = [
+  // white_nh
+  [0.08, 0.42, 0.26, 0.06, 0.08, 0.1],
+  // black
+  [0.68, 0.18, 0.015, 0.01, 0.015, 0.1],
+  // hispanic
+  [0.36, 0.44, 0.05, 0.02, 0.04, 0.09],
+  // asian East/SE
+  [0.82, 0.1, 0.01, 0.005, 0.015, 0.05],
+  // indian (Asian Indian)
+  [0.78, 0.16, 0.005, 0.005, 0.02, 0.03],
+  // other
+  [0.28, 0.4, 0.12, 0.03, 0.05, 0.12],
+];
 
-/** Mild ethnicity → hair base (appearance frequencies; not a stereotype caricature). */
-function hairBaseForEthnicity(
-  ethnicity: Ethnicity,
-): { value: HairColor; p: number }[] {
-  switch (ethnicity) {
-    case 'white_nh':
-      return [
-        { value: 'brown', p: 0.42 },
-        { value: 'blonde', p: 0.26 },
-        { value: 'black', p: 0.08 },
-        { value: 'red', p: 0.06 },
-        { value: 'other', p: 0.1 },
-        { value: 'gray', p: 0.08 },
-      ];
-    case 'black':
-      return [
-        { value: 'black', p: 0.68 },
-        { value: 'brown', p: 0.18 },
-        { value: 'other', p: 0.1 },
-        { value: 'blonde', p: 0.015 },
-        { value: 'red', p: 0.01 },
-        { value: 'gray', p: 0.015 },
-      ];
-    case 'hispanic':
-      return [
-        { value: 'brown', p: 0.44 },
-        { value: 'black', p: 0.36 },
-        { value: 'other', p: 0.09 },
-        { value: 'blonde', p: 0.05 },
-        { value: 'red', p: 0.02 },
-        { value: 'gray', p: 0.04 },
-      ];
-    case 'asian':
-      return [
-        { value: 'black', p: 0.82 },
-        { value: 'brown', p: 0.1 },
-        { value: 'other', p: 0.05 },
-        { value: 'blonde', p: 0.01 },
-        { value: 'red', p: 0.005 },
-        { value: 'gray', p: 0.015 },
-      ];
-    case 'other':
-    default:
-      return [
-        { value: 'brown', p: 0.4 },
-        { value: 'black', p: 0.28 },
-        { value: 'blonde', p: 0.12 },
-        { value: 'other', p: 0.12 },
-        { value: 'red', p: 0.03 },
-        { value: 'gray', p: 0.05 },
-      ];
-  }
-}
-
-function sampleHair(
-  rng: () => number,
-  age: number,
-  ethnicity: Ethnicity,
-): HairColor {
+function sampleHair(rng: () => number, age: number, eth: number): number {
+  const base = HAIR_BASE[eth]!;
   const grayBoost = clamp((age - 40) / 40, 0, 0.55);
-  const base = hairBaseForEthnicity(ethnicity);
-  const adjusted = base.map((x) => {
-    if (x.value === 'gray') return { ...x, p: x.p + grayBoost };
-    return { ...x, p: x.p * (1 - grayBoost * 0.85) };
-  });
-  const sum = adjusted.reduce((s, x) => s + x.p, 0);
-  return sampleCategorical(
-    rng,
-    adjusted.map((x) => ({ value: x.value, p: x.p / sum })),
-  );
+  const g0 = base[0]! * (1 - grayBoost * 0.85);
+  const g1 = base[1]! * (1 - grayBoost * 0.85);
+  const g2 = base[2]! * (1 - grayBoost * 0.85);
+  const g3 = base[3]! * (1 - grayBoost * 0.85);
+  const g4 = base[4]! + grayBoost;
+  const g5 = base[5]! * (1 - grayBoost * 0.85);
+  const sum = g0 + g1 + g2 + g3 + g4 + g5;
+  let r = rng() * sum;
+  if ((r -= g0) <= 0) return 0;
+  if ((r -= g1) <= 0) return 1;
+  if ((r -= g2) <= 0) return 2;
+  if ((r -= g3) <= 0) return 3;
+  if ((r -= g4) <= 0) return 4;
+  return 5;
 }
 
-/** Mild ethnicity eye priors, then light hair→eye tilt. */
-function eyeBaseForEthnicity(ethnicity: Ethnicity): Record<EyeColor, number> {
-  switch (ethnicity) {
-    case 'white_nh':
-      return {
-        brown: 0.34,
-        blue: 0.3,
-        hazel: 0.14,
-        green: 0.12,
-        gray: 0.05,
-        other: 0.05,
-      };
-    case 'black':
-      return {
-        brown: 0.82,
-        hazel: 0.07,
-        other: 0.05,
-        green: 0.025,
-        blue: 0.02,
-        gray: 0.015,
-      };
-    case 'hispanic':
-      return {
-        brown: 0.68,
-        hazel: 0.12,
-        other: 0.05,
-        green: 0.06,
-        blue: 0.06,
-        gray: 0.03,
-      };
-    case 'asian':
-      return {
-        brown: 0.88,
-        other: 0.05,
-        hazel: 0.03,
-        blue: 0.015,
-        green: 0.015,
-        gray: 0.01,
-      };
-    case 'other':
-    default:
-      return {
-        brown: 0.55,
-        hazel: 0.14,
-        blue: 0.12,
-        green: 0.09,
-        other: 0.06,
-        gray: 0.04,
-      };
-  }
-}
+/** Eye bases: brown, blue, hazel, green, gray, other. */
+const EYE_BASE: number[][] = [
+  [0.34, 0.3, 0.14, 0.12, 0.05, 0.05], // white_nh
+  [0.82, 0.02, 0.07, 0.025, 0.015, 0.05], // black
+  [0.68, 0.06, 0.12, 0.06, 0.03, 0.05], // hispanic
+  [0.88, 0.015, 0.03, 0.015, 0.01, 0.05], // asian East/SE
+  [0.86, 0.015, 0.05, 0.02, 0.015, 0.04], // indian
+  [0.55, 0.12, 0.14, 0.09, 0.04, 0.06], // other
+];
 
-function sampleEye(
-  rng: () => number,
-  hair: HairColor,
-  ethnicity: Ethnicity,
-): EyeColor {
-  const base = eyeBaseForEthnicity(ethnicity);
-  let brown = base.brown;
-  let blue = base.blue;
-  let hazel = base.hazel;
-  let green = base.green;
-  let gray = base.gray;
-  let other = base.other;
-
-  // Mild hair→eye tilt (same direction as genetics summaries; kept small).
-  if (hair === 'black' || hair === 'brown') {
+function sampleEye(rng: () => number, hair: number, eth: number): number {
+  const b = EYE_BASE[eth]!;
+  let brown = b[0]!;
+  let blue = b[1]!;
+  let hazel = b[2]!;
+  let green = b[3]!;
+  let gray = b[4]!;
+  let other = b[5]!;
+  if (hair === 0 || hair === 1) {
     brown += 0.08;
     blue -= 0.04;
     green -= 0.02;
     hazel -= 0.01;
-  } else if (hair === 'blonde') {
+  } else if (hair === 2) {
     brown -= 0.1;
     blue += 0.08;
     green += 0.02;
     hazel += 0.01;
-  } else if (hair === 'red') {
+  } else if (hair === 3) {
     brown -= 0.06;
     green += 0.04;
     hazel += 0.03;
     blue -= 0.01;
-  } else if (hair === 'gray') {
+  } else if (hair === 4) {
     blue += 0.015;
     gray += 0.015;
     brown -= 0.02;
   }
-
-  const items: { value: EyeColor; p: number }[] = [
-    { value: 'brown', p: Math.max(0.02, brown) },
-    { value: 'blue', p: Math.max(0.01, blue) },
-    { value: 'hazel', p: Math.max(0.02, hazel) },
-    { value: 'green', p: Math.max(0.01, green) },
-    { value: 'gray', p: Math.max(0.005, gray) },
-    { value: 'other', p: Math.max(0.01, other) },
-  ];
-  const sum = items.reduce((s, x) => s + x.p, 0);
-  return sampleCategorical(
-    rng,
-    items.map((x) => ({ value: x.value, p: x.p / sum })),
-  );
+  brown = brown > 0.02 ? brown : 0.02;
+  blue = blue > 0.01 ? blue : 0.01;
+  hazel = hazel > 0.02 ? hazel : 0.02;
+  green = green > 0.01 ? green : 0.01;
+  gray = gray > 0.005 ? gray : 0.005;
+  other = other > 0.01 ? other : 0.01;
+  const sum = brown + blue + hazel + green + gray + other;
+  let r = rng() * sum;
+  if ((r -= brown) <= 0) return 0;
+  if ((r -= blue) <= 0) return 1;
+  if ((r -= hazel) <= 0) return 2;
+  if ((r -= green) <= 0) return 3;
+  if ((r -= gray) <= 0) return 4;
+  return 5;
 }
 
-function sampleEducation(rng: () => number, age: number): Education {
+function sampleEducation(rng: () => number, age: number): number {
+  if (age < 18) return 0;
   const young = age < 35;
-  const items: { value: Education; p: number }[] = young
-    ? [
-        { value: 'less_than_hs', p: 0.07 },
-        { value: 'hs', p: 0.24 },
-        { value: 'some_college', p: 0.28 },
-        { value: 'bachelors', p: 0.27 },
-        { value: 'graduate', p: 0.14 },
-      ]
-    : [
-        { value: 'less_than_hs', p: 0.09 },
-        { value: 'hs', p: 0.28 },
-        { value: 'some_college', p: 0.27 },
-        { value: 'bachelors', p: 0.23 },
-        { value: 'graduate', p: 0.13 },
-      ];
-  return sampleCategorical(rng, items);
+  let r = rng();
+  if (young) {
+    if ((r -= 0.07) <= 0) return 0;
+    if ((r -= 0.24) <= 0) return 1;
+    if ((r -= 0.28) <= 0) return 2;
+    if ((r -= 0.27) <= 0) return 3;
+    return 4;
+  }
+  if ((r -= 0.09) <= 0) return 0;
+  if ((r -= 0.28) <= 0) return 1;
+  if ((r -= 0.27) <= 0) return 2;
+  if ((r -= 0.23) <= 0) return 3;
+  return 4;
 }
 
-function sampleIncome(rng: () => number, education: Education, age: number): number {
-  const base: Record<Education, number> = {
-    less_than_hs: 22_000,
-    hs: 32_000,
-    some_college: 40_000,
-    bachelors: 58_000,
-    graduate: 78_000,
-  };
+const INCOME_BASE = [22_000, 32_000, 40_000, 58_000, 78_000];
+
+function sampleIncome(rng: () => number, edu: number, age: number): number {
+  if (age < 18) return 0;
   const ageFactor = clamp(0.7 + ((age - 22) / 40) * 0.55, 0.65, 1.25);
-  const mean = base[education] * ageFactor;
+  const mean = INCOME_BASE[edu]! * ageFactor;
   const sigma = 0.55;
   const logMean = Math.log(mean) - 0.5 * sigma * sigma;
   const income = Math.exp(logMean + sigma * randn(rng));
-  return clamp(income, 0, 750_000);
+  return clamp(income, 0, 750_000) | 0;
 }
 
 function sampleAvailable(rng: () => number, age: number): boolean {
+  if (age < 18) return false;
   let pMarried: number;
   if (age < 25) pMarried = 0.12;
   else if (age < 30) pMarried = 0.32;
@@ -324,19 +213,21 @@ function sampleAvailable(rng: () => number, age: number): boolean {
   return rng() >= pMarried;
 }
 
-function tattooProb(age: number, education: Education): number {
+function tattooProb(age: number, edu: number): number {
+  if (age < 18) return 0;
   let p = 0.3;
   if (age < 25) p = 0.42;
   else if (age < 30) p = 0.4;
   else if (age < 40) p = 0.35;
   else if (age < 50) p = 0.22;
   else p = 0.12;
-  if (education === 'graduate') p *= 0.85;
-  if (education === 'less_than_hs') p *= 1.05;
+  if (edu === 4) p *= 0.85;
+  if (edu === 0) p *= 1.05;
   return clamp(p, 0.05, 0.55);
 }
 
 function facePiercingProb(age: number): number {
+  if (age < 18) return 0;
   if (age < 25) return 0.12;
   if (age < 30) return 0.09;
   if (age < 40) return 0.05;
@@ -345,27 +236,140 @@ function facePiercingProb(age: number): number {
 }
 
 function bodyPiercingProb(age: number, tattoos: boolean): number {
+  if (age < 18) return 0;
   let p = age < 30 ? 0.14 : age < 40 ? 0.08 : 0.03;
   if (tattoos) p *= 1.7;
   return clamp(p, 0.01, 0.35);
 }
 
-const CUP_ORDER: CupSize[] = ['AA', 'A', 'B', 'C', 'D', 'DD', 'DDD+'];
-
-function sampleCup(rng: () => number, bmi: number, weightLb: number): CupSize {
+function sampleCup(rng: () => number, bmi: number, weightLb: number): number {
   const t = clamp((bmi - 18) / 22, 0, 1);
   const center = lerp(1.6, 4.6, t);
   const weightNudge = clamp((weightLb - 140) / 200, -0.3, 0.5);
-  const mu = center + weightNudge;
-  const sigma = 1.15;
-  const z = mu + sigma * randn(rng);
-  const idx = clamp(Math.round(z), 0, CUP_ORDER.length - 1);
-  return CUP_ORDER[idx]!;
+  const z = center + weightNudge + 1.15 * randn(rng);
+  const idx = Math.round(z);
+  if (idx < 0) return 0;
+  if (idx >= CUP_FROM_INDEX.length) return CUP_FROM_INDEX.length - 1;
+  return idx;
 }
 
-let cached: Woman[] | null = null;
+function writeOne(
+  pop: PackedPop,
+  i: number,
+  rng: () => number,
+  cdf: Float64Array,
+  under18: number,
+  age65: number,
+): void {
+  const age = sampleAge(rng, under18, age65);
+  const eth = sampleCdf6(rng, cdf);
 
-export function getPopulation(): Woman[] {
-  if (!cached) cached = generatePopulation();
-  return cached;
+  const heightIn = clamp(63.7 + 2.7 * randn(rng), 54, 78);
+  const bmiMean = 27.5 + 0.05 * (age - 35);
+  let bmi = bmiMean + 6.2 * randn(rng);
+  bmi = clamp(bmi, 16.5, 55);
+  const heightM = heightIn * 0.0254;
+  const weightLb = clamp(bmi * heightM * heightM * 2.20462262, 80, 420);
+
+  const hair = sampleHair(rng, age, eth);
+  const eye = sampleEye(rng, hair, eth);
+  const edu = sampleEducation(rng, age);
+  const income = sampleIncome(rng, edu, age);
+  const available = sampleAvailable(rng, age);
+  const tattoos = rng() < tattooProb(age, edu);
+  const face = rng() < facePiercingProb(age);
+  const body = rng() < bodyPiercingProb(age, tattoos);
+  const cup = sampleCup(rng, bmi, weightLb);
+
+  pop.age[i] = age;
+  pop.heightTenthIn[i] = Math.round(heightIn * 10);
+  pop.weightLb[i] = Math.round(weightLb);
+  pop.ethnicity[i] = eth;
+  pop.hair[i] = hair;
+  pop.eye[i] = eye;
+  pop.education[i] = edu;
+  pop.incomeUsd[i] = Math.round(income / 100) * 100;
+  pop.cup[i] = cup;
+  let flags = 0;
+  if (tattoos) flags |= FLAG_TATTOOS;
+  if (face) flags |= FLAG_FACE;
+  if (body) flags |= FLAG_BODY;
+  if (available) flags |= FLAG_AVAILABLE;
+  pop.flags[i] = flags;
 }
+
+export function generatePopulationSync(
+  city: CityConfig,
+  seed = CITY_SEED[city.id],
+): PackedPop {
+  const n = city.femaleCount;
+  const pop = allocPop(city.id, n);
+  const rng = mulberry32(seed);
+  const cdf = ethnicityCdf(city);
+  for (let i = 0; i < n; i++) {
+    writeOne(pop, i, rng, cdf, city.under18Pct, city.age65PlusPct);
+  }
+  return pop;
+}
+
+export async function generatePopulationAsync(
+  city: CityConfig,
+  seed = CITY_SEED[city.id],
+  onProgress?: (done: number, total: number) => void,
+): Promise<PackedPop> {
+  const n = city.femaleCount;
+  const pop = allocPop(city.id, n);
+  const rng = mulberry32(seed);
+  const cdf = ethnicityCdf(city);
+  const under18 = city.under18Pct;
+  const age65 = city.age65PlusPct;
+  for (let i = 0; i < n; ) {
+    const end = Math.min(n, i + CHUNK);
+    for (; i < end; i++) writeOne(pop, i, rng, cdf, under18, age65);
+    onProgress?.(i, n);
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+  return pop;
+}
+
+const cache = new Map<CityId, PackedPop>();
+const inflight = new Map<CityId, Promise<PackedPop>>();
+
+export function peekPopulation(cityId: CityId): PackedPop | null {
+  return cache.get(cityId) ?? null;
+}
+
+export function getPopulationAsync(
+  cityId: CityId,
+  onProgress?: (done: number, total: number) => void,
+): Promise<PackedPop> {
+  const hit = cache.get(cityId);
+  if (hit) return Promise.resolve(hit);
+  const pending = inflight.get(cityId);
+  if (pending) return pending;
+  const city = getCity(cityId);
+  const p = generatePopulationAsync(city, CITY_SEED[cityId], onProgress).then(
+    (pop) => {
+      cache.set(cityId, pop);
+      inflight.delete(cityId);
+      return pop;
+    },
+    (err) => {
+      inflight.delete(cityId);
+      throw err;
+    },
+  );
+  inflight.set(cityId, p);
+  return p;
+}
+
+/** Sync helper for tests / first paint if already cached. */
+export function getPopulation(cityId: CityId = 'tyler_tx'): PackedPop {
+  const hit = cache.get(cityId);
+  if (hit) return hit;
+  const pop = generatePopulationSync(CITIES[cityId], CITY_SEED[cityId]);
+  cache.set(cityId, pop);
+  return pop;
+}
+
+export { ETHNICITY_INDEX };

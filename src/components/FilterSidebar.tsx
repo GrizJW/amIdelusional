@@ -1,4 +1,4 @@
-import type { Filters, HairColor, EyeColor, Education, CupSize, Ethnicity } from '../model/types';
+import type { Filters, HairColor, EyeColor, Education, CupSize, Ethnicity, CityId } from '../model/types';
 import {
   CUP_OPTIONS,
   DEFAULT_FILTERS,
@@ -7,11 +7,7 @@ import {
   EYE_OPTIONS,
   HAIR_OPTIONS,
 } from '../model/types';
-import {
-  TYLER_ACS_FEMALE_COUNT,
-  TYLER_ACS_POPULATION,
-  TYLER_QUICKFACTS_POP_2025,
-} from '../model/sources';
+import { CITY_LIST, getCity } from '../model/cities';
 import { inchesToFeetLabel } from '../model/filter';
 
 interface Props {
@@ -27,6 +23,8 @@ function toggleIn<T extends string>(list: T[] | null, value: T): T[] | null {
 
 export function FilterSidebar({ filters, onChange }: Props) {
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
+  const city = getCity(filters.region);
+  const qf = city.quickfacts;
 
   return (
     <aside className="sidebar glass-panel">
@@ -35,7 +33,7 @@ export function FilterSidebar({ filters, onChange }: Props) {
         <button
           type="button"
           className="ghost"
-          onClick={() => onChange({ ...DEFAULT_FILTERS })}
+          onClick={() => onChange({ ...DEFAULT_FILTERS, region: filters.region })}
         >
           Reset
         </button>
@@ -43,13 +41,13 @@ export function FilterSidebar({ filters, onChange }: Props) {
 
       <section className="filter-block">
         <label className="block-label">
-          Age band <span className="tag sourced">adults only</span>
+          Age band <span className="tag sourced">adults 18+</span>
         </label>
         <div className="range-row">
           <input
             type="number"
             min={18}
-            max={65}
+            max={90}
             value={filters.ageMin}
             onChange={(e) =>
               set({ ageMin: Math.max(18, Number(e.target.value) || 18) })
@@ -59,10 +57,10 @@ export function FilterSidebar({ filters, onChange }: Props) {
           <input
             type="number"
             min={18}
-            max={65}
+            max={90}
             value={filters.ageMax}
             onChange={(e) =>
-              set({ ageMax: Math.min(65, Math.max(18, Number(e.target.value) || 18)) })
+              set({ ageMax: Math.min(90, Math.max(18, Number(e.target.value) || 18)) })
             }
           />
         </div>
@@ -70,7 +68,7 @@ export function FilterSidebar({ filters, onChange }: Props) {
           className="dual-hint"
           type="range"
           min={18}
-          max={65}
+          max={90}
           value={filters.ageMax}
           onChange={(e) => set({ ageMax: Number(e.target.value) })}
         />
@@ -78,21 +76,28 @@ export function FilterSidebar({ filters, onChange }: Props) {
 
       <section className="filter-block">
         <label className="block-label">
-          Region <span className="tag sourced">Tyler, TX</span>
+          City <span className="tag sourced">{city.shortName}</span>
         </label>
         <select
           value={filters.region}
-          onChange={() => set({ region: 'tyler_tx' })}
-          aria-label="Region"
+          onChange={(e) => set({ region: e.target.value as CityId })}
+          aria-label="City"
         >
-          <option value="tyler_tx">Tyler, TX (city dating pool)</option>
+          {CITY_LIST.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} (city dating pool)
+            </option>
+          ))}
         </select>
         <p className="hint" style={{ marginTop: '0.35rem' }}>
-          ACS pop {TYLER_ACS_POPULATION.toLocaleString()} · ~{TYLER_ACS_FEMALE_COUNT.toLocaleString()} women
+          {city.nBasis === 'acs' ? 'ACS' : 'QuickFacts'} pop{' '}
+          {city.totalPop.toLocaleString()} · N = {city.femaleCount.toLocaleString()} women
           <br />
-          <span className="muted">
-            QuickFacts Jul 2025 est. {TYLER_QUICKFACTS_POP_2025.toLocaleString()} (footnote)
-          </span>
+          {qf ? (
+            <span className="muted">
+              QuickFacts {qf.yearLabel} est. {qf.pop.toLocaleString()} (footnote)
+            </span>
+          ) : null}
         </p>
         <label className="check-row">
           <input
@@ -102,7 +107,7 @@ export function FilterSidebar({ filters, onChange }: Props) {
           />
           <span>
             Available only{' '}
-            <span className="hint">(≈ unmarried / not currently married)</span>
+            <span className="hint">(≈ unmarried / not currently married; excludes minors)</span>
           </span>
         </label>
       </section>

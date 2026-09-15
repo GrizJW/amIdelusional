@@ -1,8 +1,15 @@
-import type { BreakdownItem, FilterResult, Filters, Woman } from './types';
+import type { BreakdownItem, FilterResult, Filters, PackedPop } from './types';
 import {
-  POPULATION_SIZE,
-  TYLER_ADULT_WOMEN_ESTIMATE,
-} from './population';
+  CUP_FROM_INDEX,
+  EDUCATION_INDEX,
+  ETHNICITY_INDEX,
+  EYE_INDEX,
+  FLAG_AVAILABLE,
+  FLAG_BODY,
+  FLAG_FACE,
+  FLAG_TATTOOS,
+  HAIR_INDEX,
+} from './types';
 
 type Dim =
   | 'age'
@@ -33,66 +40,135 @@ const TRAIT_DIMS: Dim[] = [
   'cup',
 ];
 
-export function matchesFilters(
-  w: Woman,
-  f: Filters,
-  opts?: { only?: ReadonlySet<Dim> },
-): boolean {
-  const check = (dim: Dim) => !opts?.only || opts.only.has(dim);
+const DIM_BIT: Record<Dim, number> = {
+  age: 1 << 0,
+  available: 1 << 1,
+  height: 1 << 2,
+  weight: 1 << 3,
+  ethnicity: 1 << 4,
+  hair: 1 << 5,
+  eye: 1 << 6,
+  income: 1 << 7,
+  education: 1 << 8,
+  tattoos: 1 << 9,
+  facePiercings: 1 << 10,
+  bodyPiercings: 1 << 11,
+  cup: 1 << 12,
+};
 
-  if (check('age')) {
-    if (w.age < f.ageMin || w.age > f.ageMax) return false;
+function maskOf(dims: readonly Dim[]): number {
+  let m = 0;
+  for (const d of dims) m |= DIM_BIT[d];
+  return m;
+}
+
+function listMask(values: string[] | null, index: Record<string, number>): number {
+  if (!values || values.length === 0) return 0xffff;
+  let m = 0;
+  for (const v of values) m |= 1 << index[v]!;
+  return m;
+}
+
+function cupMask(values: Filters['cup']): number {
+  if (!values || values.length === 0) return 0xffff;
+  let m = 0;
+  for (let i = 0; i < CUP_FROM_INDEX.length; i++) {
+    if (values.includes(CUP_FROM_INDEX[i]!)) m |= 1 << i;
   }
-  if (check('available')) {
-    if (f.availableOnly && !w.available) return false;
+  return m;
+}
+
+interface Compiled {
+  ageMin: number;
+  ageMax: number;
+  heightMinT: number;
+  heightMaxT: number;
+  weightMin: number;
+  weightMax: number;
+  incomeMin: number;
+  incomeMax: number;
+  ethMask: number;
+  hairMask: number;
+  eyeMask: number;
+  eduMask: number;
+  cupMask: number;
+  availableOnly: boolean;
+  tattoos: Filters['tattoos'];
+  face: Filters['facePiercings'];
+  body: Filters['bodyPiercings'];
+}
+
+function compile(f: Filters): Compiled {
+  return {
+    ageMin: Math.max(18, f.ageMin),
+    ageMax: Math.max(Math.max(18, f.ageMin), f.ageMax),
+    heightMinT: Math.round(f.heightMinIn * 10),
+    heightMaxT: Math.round(f.heightMaxIn * 10),
+    weightMin: f.weightMinLb,
+    weightMax: f.weightMaxLb,
+    incomeMin: f.incomeMin,
+    incomeMax: f.incomeMax,
+    ethMask: listMask(f.ethnicity, ETHNICITY_INDEX),
+    hairMask: listMask(f.hair, HAIR_INDEX),
+    eyeMask: listMask(f.eye, EYE_INDEX),
+    eduMask: listMask(f.education, EDUCATION_INDEX),
+    cupMask: cupMask(f.cup),
+    availableOnly: f.availableOnly,
+    tattoos: f.tattoos,
+    face: f.facePiercings,
+    body: f.bodyPiercings,
+  };
+}
+
+function pass(pop: PackedPop, i: number, c: Compiled, dimMask: number): boolean {
+  if (dimMask & DIM_BIT.age) {
+    const a = pop.age[i]!;
+    if (a < c.ageMin || a > c.ageMax) return false;
   }
-  if (check('height')) {
-    if (w.heightIn < f.heightMinIn || w.heightIn > f.heightMaxIn) return false;
+  if (dimMask & DIM_BIT.available) {
+    if (c.availableOnly && (pop.flags[i]! & FLAG_AVAILABLE) === 0) return false;
   }
-  if (check('weight')) {
-    if (w.weightLb < f.weightMinLb || w.weightLb > f.weightMaxLb) return false;
+  if (dimMask & DIM_BIT.height) {
+    const h = pop.heightTenthIn[i]!;
+    if (h < c.heightMinT || h > c.heightMaxT) return false;
   }
-  if (check('ethnicity')) {
-    if (
-      f.ethnicity &&
-      f.ethnicity.length > 0 &&
-      !f.ethnicity.includes(w.ethnicity)
-    ) {
-      return false;
-    }
+  if (dimMask & DIM_BIT.weight) {
+    const w = pop.weightLb[i]!;
+    if (w < c.weightMin || w > c.weightMax) return false;
   }
-  if (check('hair')) {
-    if (f.hair && f.hair.length > 0 && !f.hair.includes(w.hair)) return false;
+  if (dimMask & DIM_BIT.ethnicity) {
+    if ((c.ethMask & (1 << pop.ethnicity[i]!)) === 0) return false;
   }
-  if (check('eye')) {
-    if (f.eye && f.eye.length > 0 && !f.eye.includes(w.eye)) return false;
+  if (dimMask & DIM_BIT.hair) {
+    if ((c.hairMask & (1 << pop.hair[i]!)) === 0) return false;
   }
-  if (check('income')) {
-    if (w.incomeUsd < f.incomeMin || w.incomeUsd > f.incomeMax) return false;
+  if (dimMask & DIM_BIT.eye) {
+    if ((c.eyeMask & (1 << pop.eye[i]!)) === 0) return false;
   }
-  if (check('education')) {
-    if (
-      f.education &&
-      f.education.length > 0 &&
-      !f.education.includes(w.education)
-    ) {
-      return false;
-    }
+  if (dimMask & DIM_BIT.income) {
+    const inc = pop.incomeUsd[i]!;
+    if (inc < c.incomeMin || inc > c.incomeMax) return false;
   }
-  if (check('tattoos')) {
-    if (f.tattoos === 'yes' && !w.tattoos) return false;
-    if (f.tattoos === 'no' && w.tattoos) return false;
+  if (dimMask & DIM_BIT.education) {
+    if ((c.eduMask & (1 << pop.education[i]!)) === 0) return false;
   }
-  if (check('facePiercings')) {
-    if (f.facePiercings === 'yes' && !w.facePiercings) return false;
-    if (f.facePiercings === 'no' && w.facePiercings) return false;
+  if (dimMask & DIM_BIT.tattoos) {
+    const on = (pop.flags[i]! & FLAG_TATTOOS) !== 0;
+    if (c.tattoos === 'yes' && !on) return false;
+    if (c.tattoos === 'no' && on) return false;
   }
-  if (check('bodyPiercings')) {
-    if (f.bodyPiercings === 'yes' && !w.bodyPiercings) return false;
-    if (f.bodyPiercings === 'no' && w.bodyPiercings) return false;
+  if (dimMask & DIM_BIT.facePiercings) {
+    const on = (pop.flags[i]! & FLAG_FACE) !== 0;
+    if (c.face === 'yes' && !on) return false;
+    if (c.face === 'no' && on) return false;
   }
-  if (check('cup')) {
-    if (f.cup && f.cup.length > 0 && !f.cup.includes(w.cup)) return false;
+  if (dimMask & DIM_BIT.bodyPiercings) {
+    const on = (pop.flags[i]! & FLAG_BODY) !== 0;
+    if (c.body === 'yes' && !on) return false;
+    if (c.body === 'no' && on) return false;
+  }
+  if (dimMask & DIM_BIT.cup) {
+    if ((c.cupMask & (1 << pop.cup[i]!)) === 0) return false;
   }
   return true;
 }
@@ -140,57 +216,38 @@ const LABELS: Record<string, string> = {
   cup: 'Cup size',
 };
 
-export function evaluate(population: Woman[], f: Filters): FilterResult {
-  const filters: Filters = {
-    ...f,
-    ageMin: Math.max(18, f.ageMin),
-    ageMax: Math.max(Math.max(18, f.ageMin), f.ageMax),
-  };
+export function evaluate(population: PackedPop, f: Filters): FilterResult {
+  const c = compile(f);
+  const n = population.n;
+  const baseMask = maskOf(['age', 'available']);
+  const allMask = maskOf(['age', 'available', ...TRAIT_DIMS]);
 
-  const baseOnly = new Set<Dim>(['age', 'available']);
-  const allDims = new Set<Dim>(['age', 'available', ...TRAIT_DIMS]);
-
+  const baseIdx = new Uint32Array(n);
   let availablePool = 0;
   let matching = 0;
-  const basePass: Woman[] = [];
 
-  for (const w of population) {
-    if (!matchesFilters(w, filters, { only: baseOnly })) continue;
-    availablePool++;
-    basePass.push(w);
-    if (matchesFilters(w, filters, { only: allDims })) matching++;
+  for (let i = 0; i < n; i++) {
+    if (!pass(population, i, c, baseMask)) continue;
+    baseIdx[availablePool++] = i;
+    if (pass(population, i, c, allMask)) matching++;
   }
 
   const percent = availablePool === 0 ? 0 : (matching / availablePool) * 100;
 
-  // Scale synthetic available share → Tyler adult women, then apply match %.
-  const availableShare = population.length === 0 ? 0 : availablePool / population.length;
-  const cityScaledAvailable = Math.round(
-    TYLER_ADULT_WOMEN_ESTIMATE * availableShare,
-  );
-  const cityScaledMatching =
-    availablePool === 0
-      ? 0
-      : Math.round(cityScaledAvailable * (matching / availablePool));
-
-  const active = TRAIT_DIMS.filter((d) => isActive(filters, d));
+  const active = TRAIT_DIMS.filter((d) => isActive(f, d));
   const breakdown: BreakdownItem[] = [];
 
-  for (let i = 0; i < active.length; i++) {
-    const dim = active[i]!;
-
-    const aloneSet = new Set<Dim>(['age', 'available', dim]);
+  for (let ai = 0; ai < active.length; ai++) {
+    const dim = active[ai]!;
+    const aloneMask = maskOf(['age', 'available', dim]);
+    const seqMask = maskOf(['age', 'available', ...active.slice(0, ai + 1)]);
     let alone = 0;
-    for (const w of basePass) {
-      if (matchesFilters(w, filters, { only: aloneSet })) alone++;
-    }
-
-    const seqSet = new Set<Dim>(['age', 'available', ...active.slice(0, i + 1)]);
     let seq = 0;
-    for (const w of basePass) {
-      if (matchesFilters(w, filters, { only: seqSet })) seq++;
+    for (let k = 0; k < availablePool; k++) {
+      const i = baseIdx[k]!;
+      if (pass(population, i, c, aloneMask)) alone++;
+      if (pass(population, i, c, seqMask)) seq++;
     }
-
     breakdown.push({
       id: dim,
       label: LABELS[dim] ?? dim,
@@ -203,9 +260,9 @@ export function evaluate(population: Woman[], f: Filters): FilterResult {
     availablePool,
     matching,
     percent,
-    totalGenerated: population.length,
-    cityScaledMatching,
-    cityScaledAvailable,
+    totalGenerated: n,
+    cityScaledMatching: matching,
+    cityScaledAvailable: availablePool,
     breakdown,
   };
 }
@@ -222,6 +279,3 @@ export function inchesToFeetLabel(inches: number): string {
   const rem = Math.round(inches % 12);
   return `${whole}'${rem}"`;
 }
-
-/** Re-export for UI that needs the frame size. */
-export { POPULATION_SIZE, TYLER_ADULT_WOMEN_ESTIMATE };
