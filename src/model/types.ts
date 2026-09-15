@@ -2,6 +2,9 @@ import type { CityId } from './cities';
 
 export type { CityId };
 
+/** Dating-pool sex. Default women preserves prior UX. */
+export type Sex = 'female' | 'male';
+
 export type HairColor =
   | 'black'
   | 'brown'
@@ -126,9 +129,21 @@ export const FLAG_BODY = 1 << 2;
 /** Available ≈ unmarried AND age ≥ 18. Minors never available. */
 export const FLAG_AVAILABLE = 1 << 3;
 
-/** Structure-of-arrays synthetic city-women population (1 row = 1 woman). */
+/** Cache / pool key: city + sex (e.g. tyler_tx_female, houston_tx_male). */
+export type PoolKey = `${CityId}_${Sex}`;
+
+export function poolKey(cityId: CityId, sex: Sex): PoolKey {
+  return `${cityId}_${sex}`;
+}
+
+/**
+ * Structure-of-arrays synthetic city population (1 row = 1 person of selected sex).
+ * Cup is meaningful for female only (zeros for male).
+ * Penis length/girth are meaningful for male only (zeros for female) — hundredths of an inch.
+ */
 export interface PackedPop {
   cityId: CityId;
+  sex: Sex;
   n: number;
   age: Uint8Array;
   heightTenthIn: Uint16Array;
@@ -140,6 +155,10 @@ export interface PackedPop {
   incomeUsd: Uint32Array;
   flags: Uint8Array;
   cup: Uint8Array;
+  /** Erect length in hundredths of an inch (male only; 0 for female). */
+  penisLengthHundIn: Uint16Array;
+  /** Erect girth in hundredths of an inch (male only; 0 for female). */
+  penisGirthHundIn: Uint16Array;
 }
 
 export interface Filters {
@@ -158,9 +177,16 @@ export interface Filters {
   bodyPiercings: 'any' | 'yes' | 'no';
   cup: CupSize[] | null;
   region: CityId;
+  sex: Sex;
   availableOnly: boolean;
   weightMinLb: number;
   weightMaxLb: number;
+  /** Erect length filter (inches). Men only; ignored for women. */
+  penisLengthMinIn: number;
+  penisLengthMaxIn: number;
+  /** Erect girth filter (inches). Men only; ignored for women. */
+  penisGirthMinIn: number;
+  penisGirthMaxIn: number;
 }
 
 export interface FilterResult {
@@ -168,9 +194,9 @@ export interface FilterResult {
   matching: number;
   percent: number;
   totalGenerated: number;
-  /** Absolute matching women in this city (N = city female count, so 1:1). */
+  /** Absolute matching people in this city/sex pool (N = city sex count, so 1:1). */
   cityScaledMatching: number;
-  /** Absolute available (or age-band) women in this city. */
+  /** Absolute available (or age-band) people in this city/sex pool. */
   cityScaledAvailable: number;
   breakdown: BreakdownItem[];
 }
@@ -229,6 +255,16 @@ export const CUP_OPTIONS: { value: CupSize; label: string }[] = [
   { value: 'DDD+', label: 'DDD+ / F+' },
 ];
 
+export const SEX_OPTIONS: { value: Sex; label: string }[] = [
+  { value: 'female', label: 'Women' },
+  { value: 'male', label: 'Men' },
+];
+
+/** Default penis length range (inches) — wide open; Veale mean ≈ 5.16". */
+export const PENIS_LENGTH_RANGE = { min: 2.5, max: 9.5 } as const;
+/** Default penis girth range (inches) — wide open; Veale mean ≈ 4.59". */
+export const PENIS_GIRTH_RANGE = { min: 2.5, max: 7.5 } as const;
+
 export const DEFAULT_FILTERS: Filters = {
   ageMin: 18,
   ageMax: 40,
@@ -247,5 +283,10 @@ export const DEFAULT_FILTERS: Filters = {
   bodyPiercings: 'any',
   cup: null,
   region: 'tyler_tx',
+  sex: 'female',
   availableOnly: true,
+  penisLengthMinIn: PENIS_LENGTH_RANGE.min,
+  penisLengthMaxIn: PENIS_LENGTH_RANGE.max,
+  penisGirthMinIn: PENIS_GIRTH_RANGE.min,
+  penisGirthMaxIn: PENIS_GIRTH_RANGE.max,
 };

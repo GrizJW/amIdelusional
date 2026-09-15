@@ -1,8 +1,8 @@
 {
   "name": "amidelusional",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
-  "description": "Interactive Texas city dating-pool calculator (Tyler / Houston / Dallas) with correlated trait filters including ethnicity (entertainment model)",
+  "description": "Interactive Texas city dating-pool calculator (Tyler / Houston / Dallas; Women/Men) with correlated trait filters (entertainment model)",
   "type": "module",
   "author": "GrizJW",
   "license": "MIT",

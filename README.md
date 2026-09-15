@@ -1,8 +1,8 @@
 # amIdelusional
 
-Interactive **dating-pool calculator** for selectable Texas cities (**Tyler**, **Houston**, **Dallas**): set filters on women (ethnicity, height, weight, hair, eyes, income, education, tattoos, piercings, cup size, age) and see the **live % of the available pool** that matches — with **absolute headcounts** against that city’s ACS female population.
+Interactive **dating-pool calculator** for selectable Texas cities (**Tyler**, **Houston**, **Dallas**) and **Women | Men** pools: set filters (ethnicity, height, weight, hair, eyes, income, education, tattoos, piercings, cup size *or* hypothetical penis size, age) and see the **live % of the available pool** that matches — with **absolute headcounts** against that city’s ACS sex count.
 
-Traits are **correlated** via a synthetic joint distribution — not independent filters multiplied together. Example: ethnicity mildly shifts hair/eye probabilities; higher weight/BMI shifts cup-size probabilities upward.
+Traits are **correlated** via a synthetic joint distribution — not independent filters multiplied together. Example: ethnicity mildly shifts hair/eye probabilities; higher weight/BMI shifts cup-size probabilities upward (women); erect length has a mild height correlation (men, calcSD/Veale-style).
 
 > **Entertainment model.** Rough, opinionated, and incomplete. Not census microdata, not medical advice, not a judgment about anyone. Dating filters are adults 18+ only. Valorant rank: N/A.
 
@@ -27,32 +27,54 @@ npm run electron:dev          # build UI + open Electron window
 npm run electron:build        # Windows x64 portable under release/
 ```
 
-Requires a Windows build host (or CI / Wine) for the portable `.exe`. Artifact name: `amIdelusional-0.1.2-x64-portable.exe`.
+Requires a Windows build host (or CI / Wine) for the portable `.exe`. Artifact name: `amIdelusional-0.1.3-x64-portable.exe`.
 
 A GitHub Actions workflow template lives at `electron/ci-release-windows.yml` (copy into `.github/workflows/` if your token has the `workflow` scope).
 
-**Release:** https://github.com/GrizJW/amIdelusional/releases/tag/v0.1.2
+**Release:** https://github.com/GrizJW/amIdelusional/releases/tag/v0.1.3
 
-## City frames (generator N = all city women)
+## Sex / pool selector
 
-Switch cities in the sidebar. Changing city **regenerates** that city’s full female population (cached after the first build). N is **not** a 100,000-row sample.
+Sidebar **Women | Men** (default **Women** to preserve prior UX). City switch + sex switch regenerates/caches pools with keys like `tyler_tx_female`, `houston_tx_male` (loading overlay while building).
 
-| City | Total pop | Female | **N (women)** | Basis | Under 18 | 65+ |
-|------|-----------|--------|---------------|-------|----------|-----|
-| **Tyler** | 107,718 | 51.9% | **55,906** | ACS 2019–2023 | 23.3% QF | 17.0% QF |
-| **Houston** | 2,300,419 | ~50.5% | **1,161,915** | ACS 2019–2023 female count | 23.4% QF | 12.3% QF |
-| **Dallas** | 1,299,553 | 50.2% | **652,376** | ACS 2019–2023 (fetched) | 23.9% QF | 11.8% QF |
+| What | Women | Men |
+|------|-------|-----|
+| Generator N | ACS female count | ACS male = total − female (documented per city) |
+| Height / weight | Female NHANES-style | Male NHANES-style (taller / heavier means) |
+| Cup size | Modeled filter | **Hidden** (not in male model) |
+| Penis size (erect L/G) | **No UI** | **Modeled / hypothetical** — Veale 2015 / calcSD-style normals; mild height corr.; labeled |
+| Tattoos / piercings | Modeled | Modeled with male-adjusted base rates |
+| Ethnicity | City ACS shares | **Same** city shares (not sex-split — documented) |
+| Income / education / available | Female schedules | Male-adapted (later marriage at young ages; earnings gap directional) |
 
-QuickFacts newer totals are **footnotes only** (Tyler 113,723; Houston 2,397,315; Dallas 1,329,491). Dallas N is ACS-based because the 5-year table was fetched — **not** the QuickFacts fallback 1,329,491 × 50.0% ≈ 664,746.
+### Male N per city
 
-Ages include under-18 so N = **all city women**. Dating “available” then excludes minors and currently-married adults. Adult 18+ display uses QuickFacts under-18 share × female N.
+| City | Total pop | Female N | **Male N** | Derivation |
+|------|-----------|----------|------------|------------|
+| **Tyler** | 107,718 | 55,906 (51.9%) | **51,812** | total − female (≈ 48.1%) |
+| **Houston** | 2,300,419 | 1,161,915 | **1,138,504** | total − female (matches City of Houston district profile male total) |
+| **Dallas** | 1,299,553 | 652,376 (50.2%) | **647,177** | total − female (derived from existing ACS config; not invented) |
+
+## City frames (generator N = all city women *or* men)
+
+Switch cities in the sidebar. Changing city **or** sex regenerates that pool (cached after the first build). N is **not** a 100,000-row sample.
+
+| City | Total pop | Female N | Male N | Basis | Under 18 | 65+ |
+|------|-----------|----------|--------|-------|----------|-----|
+| **Tyler** | 107,718 | **55,906** | **51,812** | ACS 2019–2023 | 23.3% QF | 17.0% QF |
+| **Houston** | 2,300,419 | **1,161,915** | **1,138,504** | ACS 2019–2023 | 23.4% QF | 12.3% QF |
+| **Dallas** | 1,299,553 | **652,376** | **647,177** | ACS 2019–2023 (fetched) | 23.9% QF | 11.8% QF |
+
+QuickFacts newer totals are **footnotes only**. Ages include under-18 so N = **all city people of that sex**. Dating “available” then excludes minors and currently-married adults.
+
+Hero copy: **“Share of Tyler/Houston/Dallas dating pool”** for the selected sex.
 
 ### Ethnicity (mutually exclusive; Asian ≠ Indian)
 
-**Asian** = East / Southeast Asian (Chinese, Filipino, Vietnamese, Korean, Japanese, …) — **excludes Asian Indian**.  
-**Indian** = Asian Indian / South Asian Indian as its own filter.
+**Asian** = East / Southeast Asian — **excludes Asian Indian**.  
+**Indian** = Asian Indian as its own filter.
 
-The former ACS Asian-alone bucket is split using CensusDepth ACS 2023 Asian-subgroup % of city pop (Indian) subtracted from Asian-alone; remainder stays in Asian (East/SE + residual non-Indian Asian such as Pakistani/Thai when B02015 cells were not separately fetched).
+Same city race/ethnicity distribution for both sexes (Census tables we use are typically not sex-split). Documented in Data & methods.
 
 | Group | Tyler | Houston | Dallas |
 |-------|------:|--------:|-------:|
@@ -63,44 +85,53 @@ The former ACS Asian-alone bucket is split using CensusDepth ACS 2023 Asian-subg
 | Indian (Asian Indian) | 0.3% | 1.5% | 1.0% |
 | Two or more / other | 3.6% | 3.0% | 2.9% |
 
-**Sources:** Tyler & Dallas ACS / US Civic Data + CensusDepth; Houston City of Houston ACS 2019–2023 race table + CensusDepth subgroups. Other folds AIAN / NHPI / some other / two+.
+## Penis size (men only — modeled / hypothetical)
+
+Erect **length** and **girth** filters (inches; cm shown in UI) for the Men pool only.
+
+- Distribution: normal using **Veale et al. 2015** researcher-measured meta-analysis aggregates (same family of means calcSD uses): length μ = 13.12 cm (σ = 1.66); girth μ = 11.66 cm (σ = 1.10).
+- Mild length↔height correlation (r ≈ 0.25; Veale reported ~0.2–0.6 — we keep the weak end) + mild length↔girth residual correlation.
+- **No ethnicity × size claims.**
+- Clearly labeled **modeled** in UI; cited in Data & methods (calcSD + Veale). Never presented as Census.
+- Women pool: no penis-size UI. Cup size remains women-only.
+
+Refs: [Veale 2015 BJU Int](https://doi.org/10.1111/bju.13010) · [calcSD](https://calcsd.com)
 
 ## How correlation works
 
-1. Generate **N = city female count** synthetic women once per city (deterministic seed `20260915` + city offset) into packed typed arrays.
+1. Generate **N = city sex count** synthetic people once per city×sex (deterministic seed `20260915` + city offset + 100 for male) into packed typed arrays; cache key `cityId_sex`.
 2. Draw traits with **chained conditionals**:
-   - **Ethnicity** (city ACS mutually exclusive shares, Indian split out of Asian) → hair → eyes (mild priors; blonde/blue rarer outside White NH; Indian uses South-Asian priors, not East-Asian)
-   - Age (0–90, under-18 and 65+ shares from QuickFacts) → height (NHANES-ish) → BMI → weight
-   - Education + age → personal income (minors: less-than-HS, $0)
-   - Age → currently married vs **available** (minors never available)
-   - Age (+ education) → tattoos; age (+ tattoo clustering) → face/body piercings (excl. ears)
-   - BMI / weight → cup size (ordered categorical; **modeled**)
+   - **Ethnicity** (city ACS mutually exclusive shares, Indian split out of Asian) → hair → eyes
+   - Age (0–90) → height (sex-specific NHANES-ish) → BMI → weight
+   - Education + age → personal income (sex-adapted means)
+   - Age → currently married vs **available** (minors never available; men marry slightly later at young ages)
+   - Age (+ education) → tattoos; age (+ tattoo clustering) → face/body piercings (excl. ears; male rates lower for piercings)
+   - Women: BMI / weight → cup size (**modeled**)
+   - Men: height → erect length/girth (**modeled / calcSD-style**); cup not modeled
 3. Filtering = `count(rows matching all filters) / count(available pool)`.
-4. Headcounts are **absolute** in that universe (N is the city women count).
-5. Optional breakdown bars: each filter alone vs remaining % after sequential application (still joint counts).
+4. Headcounts are **absolute** in that universe.
+5. Optional breakdown bars: each filter alone vs remaining % after sequential application.
 
-Default age band **18–40**; hard floor at **18**. Default city **Tyler, TX**. **Available** ≈ not currently married — a dating-pool proxy, not “on apps” or “interested.”
-
-Ethnicity ↔ hair/eye correlations are **mild and documented** (appearance-frequency priors, not caricatures).
+Default age band **18–40**; hard floor at **18**. Default city **Tyler, TX**. Default sex **Women**.
 
 ## Sourced vs modeled
 
 | Trait | Kind | Notes |
 |-------|------|--------|
-| City pop & ethnicity | **Sourced** | ACS 2019–2023 / City of Houston / US Civic Data / CensusDepth; QuickFacts footnote |
+| City pop & ethnicity | **Sourced** | ACS / City of Houston / US Civic Data / CensusDepth; QuickFacts footnote |
+| Male / female N | **Sourced** | Female from ACS; male = total − female (documented) |
 | Asian vs Indian split | **Sourced** | ACS Asian-alone minus CensusDepth Asian Indian subgroup |
-| Height & weight / BMI | **Sourced** (directional) | CDC/NHANES adult women anthropometrics |
-| Education & income | **Sourced** (directional) | ACS / CPS-style attainment & earnings by education |
-| Availability (unmarried) | **Sourced** (directional) | ACS marital status by age; minors excluded |
+| Height & weight / BMI | **Sourced** (directional) | CDC/NHANES by sex |
+| Education & income | **Sourced** (directional) | ACS / CPS-style by sex |
+| Availability (unmarried) | **Sourced** (directional) | ACS marital status by sex/age |
 | Hair & eye color | **Sourced** (approximate) | Frequency summaries + mild ethnicity conditioning |
-| Tattoos & piercings | **Modeled** | Survey headlines + age effects — labeled in UI |
-| Cup size | **Modeled** | No government distribution; BMI-shifted — labeled in UI |
-
-Never claim “Census says 23.4% are C-cup.” Modeled traits show a yellow **modeled** badge in the filter sidebar and are documented in **Data & methods**.
+| Tattoos & piercings | **Modeled** | Survey headlines + age / sex effects — labeled |
+| Cup size (women) | **Modeled** | BMI-shifted — labeled; hidden for men |
+| Penis size (men) | **Modeled / hypothetical** | Veale / calcSD-style — labeled; no UI for women |
 
 ## Performance
 
-Houston N ≈ 1.16 million rows. Generation uses structure-of-arrays typed buffers (~15 bytes/woman, ~17 MB for Houston), one pass per city, then cache. First Houston/Dallas open shows **Building Houston/Dallas pool…** for a couple of seconds. No secret 100k cap.
+Houston female N ≈ 1.16M; male N ≈ 1.14M. Structure-of-arrays typed buffers, one pass per city×sex, then cache. First open of a large pool shows **Building … pool…**.
 
 ## Stack
 

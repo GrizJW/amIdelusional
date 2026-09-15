@@ -9,6 +9,8 @@ import {
   FLAG_FACE,
   FLAG_TATTOOS,
   HAIR_INDEX,
+  PENIS_GIRTH_RANGE,
+  PENIS_LENGTH_RANGE,
 } from './types';
 
 type Dim =
@@ -24,9 +26,11 @@ type Dim =
   | 'tattoos'
   | 'facePiercings'
   | 'bodyPiercings'
-  | 'cup';
+  | 'cup'
+  | 'penisLength'
+  | 'penisGirth';
 
-const TRAIT_DIMS: Dim[] = [
+const TRAIT_DIMS_FEMALE: Dim[] = [
   'ethnicity',
   'height',
   'weight',
@@ -38,6 +42,21 @@ const TRAIT_DIMS: Dim[] = [
   'facePiercings',
   'bodyPiercings',
   'cup',
+];
+
+const TRAIT_DIMS_MALE: Dim[] = [
+  'ethnicity',
+  'height',
+  'weight',
+  'hair',
+  'eye',
+  'education',
+  'income',
+  'tattoos',
+  'facePiercings',
+  'bodyPiercings',
+  'penisLength',
+  'penisGirth',
 ];
 
 const DIM_BIT: Record<Dim, number> = {
@@ -54,6 +73,8 @@ const DIM_BIT: Record<Dim, number> = {
   facePiercings: 1 << 10,
   bodyPiercings: 1 << 11,
   cup: 1 << 12,
+  penisLength: 1 << 13,
+  penisGirth: 1 << 14,
 };
 
 function maskOf(dims: readonly Dim[]): number {
@@ -92,10 +113,15 @@ interface Compiled {
   eyeMask: number;
   eduMask: number;
   cupMask: number;
+  penisLengthMinH: number;
+  penisLengthMaxH: number;
+  penisGirthMinH: number;
+  penisGirthMaxH: number;
   availableOnly: boolean;
   tattoos: Filters['tattoos'];
   face: Filters['facePiercings'];
   body: Filters['bodyPiercings'];
+  sex: Filters['sex'];
 }
 
 function compile(f: Filters): Compiled {
@@ -113,10 +139,15 @@ function compile(f: Filters): Compiled {
     eyeMask: listMask(f.eye, EYE_INDEX),
     eduMask: listMask(f.education, EDUCATION_INDEX),
     cupMask: cupMask(f.cup),
+    penisLengthMinH: Math.round(f.penisLengthMinIn * 100),
+    penisLengthMaxH: Math.round(f.penisLengthMaxIn * 100),
+    penisGirthMinH: Math.round(f.penisGirthMinIn * 100),
+    penisGirthMaxH: Math.round(f.penisGirthMaxIn * 100),
     availableOnly: f.availableOnly,
     tattoos: f.tattoos,
     face: f.facePiercings,
     body: f.bodyPiercings,
+    sex: f.sex,
   };
 }
 
@@ -168,7 +199,18 @@ function pass(pop: PackedPop, i: number, c: Compiled, dimMask: number): boolean 
     if (c.body === 'no' && on) return false;
   }
   if (dimMask & DIM_BIT.cup) {
+    if (c.sex !== 'female') return true;
     if ((c.cupMask & (1 << pop.cup[i]!)) === 0) return false;
+  }
+  if (dimMask & DIM_BIT.penisLength) {
+    if (c.sex !== 'male') return true;
+    const L = pop.penisLengthHundIn[i]!;
+    if (L < c.penisLengthMinH || L > c.penisLengthMaxH) return false;
+  }
+  if (dimMask & DIM_BIT.penisGirth) {
+    if (c.sex !== 'male') return true;
+    const G = pop.penisGirthHundIn[i]!;
+    if (G < c.penisGirthMinH || G > c.penisGirthMaxH) return false;
   }
   return true;
 }
@@ -196,7 +238,19 @@ function isActive(f: Filters, dim: Dim): boolean {
     case 'bodyPiercings':
       return f.bodyPiercings !== 'any';
     case 'cup':
-      return !!(f.cup && f.cup.length > 0);
+      return f.sex === 'female' && !!(f.cup && f.cup.length > 0);
+    case 'penisLength':
+      return (
+        f.sex === 'male' &&
+        (f.penisLengthMinIn > PENIS_LENGTH_RANGE.min + 0.01 ||
+          f.penisLengthMaxIn < PENIS_LENGTH_RANGE.max - 0.01)
+      );
+    case 'penisGirth':
+      return (
+        f.sex === 'male' &&
+        (f.penisGirthMinIn > PENIS_GIRTH_RANGE.min + 0.01 ||
+          f.penisGirthMaxIn < PENIS_GIRTH_RANGE.max - 0.01)
+      );
     default:
       return false;
   }
@@ -214,13 +268,16 @@ const LABELS: Record<string, string> = {
   facePiercings: 'Face piercings',
   bodyPiercings: 'Body piercings',
   cup: 'Cup size',
+  penisLength: 'Penis length (erect)',
+  penisGirth: 'Penis girth (erect)',
 };
 
 export function evaluate(population: PackedPop, f: Filters): FilterResult {
   const c = compile(f);
   const n = population.n;
+  const traitDims = f.sex === 'male' ? TRAIT_DIMS_MALE : TRAIT_DIMS_FEMALE;
   const baseMask = maskOf(['age', 'available']);
-  const allMask = maskOf(['age', 'available', ...TRAIT_DIMS]);
+  const allMask = maskOf(['age', 'available', ...traitDims]);
 
   const baseIdx = new Uint32Array(n);
   let availablePool = 0;
@@ -234,7 +291,7 @@ export function evaluate(population: PackedPop, f: Filters): FilterResult {
 
   const percent = availablePool === 0 ? 0 : (matching / availablePool) * 100;
 
-  const active = TRAIT_DIMS.filter((d) => isActive(f, d));
+  const active = traitDims.filter((d) => isActive(f, d));
   const breakdown: BreakdownItem[] = [];
 
   for (let ai = 0; ai < active.length; ai++) {
@@ -278,4 +335,12 @@ export function inchesToFeetLabel(inches: number): string {
   const whole = Math.floor(inches / 12);
   const rem = Math.round(inches % 12);
   return `${whole}'${rem}"`;
+}
+
+export function inchesToCm(inches: number): number {
+  return inches * 2.54;
+}
+
+export function formatInCm(inches: number): string {
+  return `${inches.toFixed(1)}" (${inchesToCm(inches).toFixed(1)} cm)`;
 }

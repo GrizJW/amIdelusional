@@ -1,15 +1,26 @@
 import { disclaimerFor, sourceNotesFor } from '../model/sources';
-import { ethnicityRows, type CityConfig } from '../model/cities';
+import {
+  ethnicityRows,
+  poolCount,
+  sexLabel,
+  type CityConfig,
+} from '../model/cities';
 import { POPULATION_SEED } from '../model/population';
+import type { Sex } from '../model/types';
 
 interface Props {
   open: boolean;
   onToggle: () => void;
   city: CityConfig;
+  sex: Sex;
 }
 
-export function DataMethods({ open, onToggle, city }: Props) {
-  const notes = sourceNotesFor(city);
+export function DataMethods({ open, onToggle, city, sex }: Props) {
+  const notes = sourceNotesFor(city, sex);
+  const n = poolCount(city, sex);
+  const people = sexLabel(sex);
+  const isMen = sex === 'male';
+
   return (
     <div className={`methods glass-panel ${open ? 'open' : ''}`}>
       <button type="button" className="methods-toggle" onClick={onToggle}>
@@ -18,8 +29,10 @@ export function DataMethods({ open, onToggle, city }: Props) {
       </button>
       {open ? (
         <div className="methods-body">
-          <p className="disclaimer-inline">{disclaimerFor(city)}</p>
-          <h4>{city.name} census frame</h4>
+          <p className="disclaimer-inline">{disclaimerFor(city, sex)}</p>
+          <h4>
+            {city.name} census frame ({people})
+          </h4>
           <table className="city-table">
             <tbody>
               <tr>
@@ -30,7 +43,18 @@ export function DataMethods({ open, onToggle, city }: Props) {
                 <th>Female</th>
                 <td>
                   {(city.femalePct * 100).toFixed(1)}% →{' '}
-                  <strong>{city.femaleCount.toLocaleString()}</strong> women = generator N
+                  <strong>{city.femaleCount.toLocaleString()}</strong> women
+                  {!isMen ? ' = generator N' : ''}
+                </td>
+              </tr>
+              <tr>
+                <th>Male</th>
+                <td>
+                  {(city.malePct * 100).toFixed(1)}% →{' '}
+                  <strong>{city.maleCount.toLocaleString()}</strong> men
+                  {isMen ? ' = generator N' : ''}
+                  <br />
+                  <span className="muted">{city.maleNNote}</span>
                 </td>
               </tr>
               <tr>
@@ -45,8 +69,10 @@ export function DataMethods({ open, onToggle, city }: Props) {
                 <tr>
                   <th>QuickFacts</th>
                   <td>
-                    {city.quickfacts.yearLabel} {city.quickfacts.pop.toLocaleString()} · female{' '}
-                    {(city.quickfacts.femalePct * 100).toFixed(1)}%. {city.quickfacts.note}
+                    {city.quickfacts.yearLabel}{' '}
+                    {city.quickfacts.pop.toLocaleString()} · female{' '}
+                    {(city.quickfacts.femalePct * 100).toFixed(1)}%.{' '}
+                    {city.quickfacts.note}
                   </td>
                 </tr>
               ) : null}
@@ -70,34 +96,45 @@ export function DataMethods({ open, onToggle, city }: Props) {
             </tbody>
           </table>
           <p className="muted small">{city.ethnicityNote}</p>
+          <p className="muted small">{city.ethnicitySexAssumption}</p>
           <h4>How correlation works</h4>
           <p>
-            A synthetic population of{' '}
-            <strong>{city.femaleCount.toLocaleString()}</strong> {city.shortName} women
-            (seed {POPULATION_SEED} + city offset) is generated once per city with{' '}
-            <strong>chained conditionals</strong>: ethnicity (ACS city shares, with Asian
-            Indian split out of Asian) → hair → eyes; age (including under-18 so N =
-            all city women) → height → BMI → weight; education + age → income; age →
+            A synthetic population of <strong>{n.toLocaleString()}</strong>{' '}
+            {city.shortName} {people} (seed {POPULATION_SEED} + city offset
+            {isMen ? ' + 100 for male' : ''}; cache key{' '}
+            <code>
+              {city.id}_{sex}
+            </code>
+            ) is generated once per city×sex with{' '}
+            <strong>chained conditionals</strong>: ethnicity (ACS city shares,
+            with Asian Indian split out of Asian; same shares for both sexes) →
+            hair → eyes; age (including under-18 so N = all city {people}) →
+            height (
+            {isMen
+              ? 'male NHANES ~69.1″'
+              : 'female NHANES ~63.7″'}
+            ) → BMI → weight; education + age → income; age →
             marital/availability (minors never available); age (+ education) →
-            tattoos/piercings; BMI/weight → cup size. Your filters count matching
-            rows in that joint table — so ethnicity mildly shifts hair and eye
-            probabilities, and a heavier woman is more likely to draw a larger cup
-            size than an independent product of marginals would imply. Live % and
-            headcounts are 1:1 with this universe (N is the ACS female count, not a
-            100k sample scaled up).
+            tattoos/piercings
+            {isMen ? ' (male-adjusted base rates)' : ''};{' '}
+            {isMen
+              ? 'erect length/girth from Veale/calcSD-style normals with mild height correlation (BMI irrelevant for cup — cup hidden).'
+              : 'BMI/weight → cup size (women only).'}{' '}
+            Your filters count matching rows in that joint table. Live % and
+            headcounts are 1:1 with this universe.
           </p>
           <h4>Sources &amp; modeled traits</h4>
           <ul className="source-list">
-            {notes.map((n) => (
-              <li key={n.id}>
+            {notes.map((nItem) => (
+              <li key={nItem.id}>
                 <div className="source-head">
-                  <strong>{n.trait}</strong>
-                  <span className={`tag ${n.kind}`}>{n.kind}</span>
+                  <strong>{nItem.trait}</strong>
+                  <span className={`tag ${nItem.kind}`}>{nItem.kind}</span>
                 </div>
-                <p>{n.summary}</p>
-                {n.refs.length > 0 ? (
+                <p>{nItem.summary}</p>
+                {nItem.refs.length > 0 ? (
                   <ul className="refs">
-                    {n.refs.map((r) => (
+                    {nItem.refs.map((r) => (
                       <li key={r}>{r}</li>
                     ))}
                   </ul>

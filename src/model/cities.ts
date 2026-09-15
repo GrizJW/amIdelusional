@@ -1,4 +1,4 @@
-/** City census frames. Cite; do not invent. N = ACS (or documented QuickFacts) female count. */
+/** City census frames. Cite; do not invent. N = ACS (or documented) count for selected sex. */
 
 export type CityId = 'tyler_tx' | 'houston_tx' | 'dallas_tx';
 
@@ -36,11 +36,21 @@ export interface CityConfig {
   totalPop: number;
   femaleCount: number;
   femalePct: number;
+  /** ACS male count = total − female (or documented male total). */
+  maleCount: number;
+  malePct: number;
+  /** How male N was derived — cite; do not invent. */
+  maleNNote: string;
   ethnicity: EthnicityShares;
   ethnicityNote: string;
+  /**
+   * Ethnicity shares are city-level (not sex-split). Census race/ethnicity
+   * tables used here are typically not sex-crossed in our simple frames.
+   */
+  ethnicitySexAssumption: string;
   /** QuickFacts (or ACS) persons under 18 — used in age draws + adult display. */
   under18Pct: number;
-  /** QuickFacts persons 65+ — used in age draws among all women. */
+  /** QuickFacts persons 65+ — used in age draws among all of selected sex. */
   age65PlusPct: number;
   nBasis: 'acs' | 'quickfacts';
   nBasisNote: string;
@@ -55,13 +65,19 @@ export interface CityConfig {
 
 const TYLER_ACS_POP = 107_718;
 const TYLER_ACS_FEMALE_PCT = 0.519;
+const TYLER_FEMALE = Math.round(TYLER_ACS_POP * TYLER_ACS_FEMALE_PCT); // 55,906
+const TYLER_MALE = TYLER_ACS_POP - TYLER_FEMALE; // 51,812 (≈ 48.1%)
 
 const HOUSTON_ACS_POP = 2_300_419;
-/** ACS 2019–2023 female count (City of Houston / ACS) — generator N. */
+/** ACS 2019–2023 female count (City of Houston / ACS) — female generator N. */
 const HOUSTON_ACS_FEMALE_COUNT = 1_161_915;
+/** Male = total − female; matches City of Houston district profile male total. */
+const HOUSTON_MALE = HOUSTON_ACS_POP - HOUSTON_ACS_FEMALE_COUNT; // 1,138,504
 
 const DALLAS_ACS_POP = 1_299_553;
 const DALLAS_ACS_FEMALE_PCT = 0.502;
+const DALLAS_FEMALE = Math.round(DALLAS_ACS_POP * DALLAS_ACS_FEMALE_PCT); // 652,376
+const DALLAS_MALE = DALLAS_ACS_POP - DALLAS_FEMALE; // 647,177
 
 export const CITIES: Record<CityId, CityConfig> = {
   tyler_tx: {
@@ -70,7 +86,11 @@ export const CITIES: Record<CityId, CityConfig> = {
     shortName: 'Tyler',
     totalPop: TYLER_ACS_POP,
     femalePct: TYLER_ACS_FEMALE_PCT,
-    femaleCount: Math.round(TYLER_ACS_POP * TYLER_ACS_FEMALE_PCT), // 55,906
+    femaleCount: TYLER_FEMALE,
+    maleCount: TYLER_MALE,
+    malePct: TYLER_MALE / TYLER_ACS_POP, // ≈ 0.481
+    maleNNote:
+      'Male N = ACS total − female = 107,718 − 55,906 = 51,812 (female 51.9% → male ≈ 48.1%).',
     ethnicity: {
       white_nh: 0.47,
       black: 0.233,
@@ -82,11 +102,13 @@ export const CITIES: Record<CityId, CityConfig> = {
     },
     ethnicityNote:
       'ACS / US Civic Data mutually exclusive: White NH 47.0%, Black ~23.3%, Hispanic 23.6%, Two+/other ~3.6% (AIAN ~0.1% + NHPI ~0% + Some other ~0.4% + Two or more ~3.1%). ACS Asian-alone 2.5% is split using CensusDepth ACS 2023 Asian subgroups (% of city pop): Asian Indian 0.3% → Indian; remainder 2.2% → Asian (East/Southeast — Filipino 0.5%, Vietnamese 0.5%, Chinese 0.3%, plus residual non-Indian Asian). Shares sum 100%.',
+    ethnicitySexAssumption:
+      'Ethnicity shares are city-level ACS (not sex-split). Same distribution applied to women and men pools.',
     under18Pct: 0.233,
     age65PlusPct: 0.17,
     nBasis: 'acs',
     nBasisNote:
-      'Generator N = ACS 2019–2023 female count (pop × 51.9% ≈ 55,906). Full city women, including under-18.',
+      'Female generator N = ACS 2019–2023 female count (pop × 51.9% ≈ 55,906). Male N = total − female ≈ 51,812. Full city sex count, including under-18.',
     sources: [
       'U.S. Census Bureau ACS 2019–2023 5-year — Tyler city, TX (via CensusDepth / US Civic Data)',
       'CensusDepth Tyler Asian subgroups (ACS 5-year 2023): Filipino 0.5%, Vietnamese 0.5%, Indian 0.3%, Chinese 0.3%',
@@ -109,6 +131,10 @@ export const CITIES: Record<CityId, CityConfig> = {
     totalPop: HOUSTON_ACS_POP,
     femalePct: HOUSTON_ACS_FEMALE_COUNT / HOUSTON_ACS_POP, // ~50.5%
     femaleCount: HOUSTON_ACS_FEMALE_COUNT,
+    maleCount: HOUSTON_MALE,
+    malePct: HOUSTON_MALE / HOUSTON_ACS_POP,
+    maleNNote:
+      'Male N = ACS total − female = 2,300,419 − 1,161,915 = 1,138,504 (matches City of Houston district profile male total).',
     ethnicity: {
       white_nh: 0.236,
       black: 0.225,
@@ -120,11 +146,13 @@ export const CITIES: Record<CityId, CityConfig> = {
     },
     ethnicityNote:
       'City of Houston / ACS 2019–2023 mutually exclusive: White NH 23.6%, Black 22.5%, Hispanic 44.1%, Other/Two+ ~3.0% (AIAN 0.1% + NHPI ~0% + Some other 0.4% + Two or more 2.5%). ACS Asian-alone 6.8% (156,983) is split using CensusDepth ACS 2023 Asian subgroups (% of city pop): Asian Indian 1.5% → Indian; remainder 5.3% → Asian (East/Southeast — Vietnamese 1.7%, Chinese 1.6%, Filipino 0.5%, Korean 0.3%, plus residual non-Indian Asian). Shares sum 100%.',
+    ethnicitySexAssumption:
+      'Ethnicity shares are city-level ACS (not sex-split). Same distribution applied to women and men pools.',
     under18Pct: 0.234,
     age65PlusPct: 0.123,
     nBasis: 'acs',
     nBasisNote:
-      'Generator N = ACS 2019–2023 female count 1,161,915 (~50.5% of 2,300,419). Full city women, including under-18 — not adult-only, not a 100k sample.',
+      'Female generator N = ACS 2019–2023 female count 1,161,915 (~50.5% of 2,300,419). Male N = 1,138,504. Full city sex count, including under-18 — not adult-only, not a 100k sample.',
     sources: [
       'City of Houston Planning — Race/Ethnicity Demographics, ACS 2019–2023 5-year (total 2,300,419; White alone 23.6%; Black 22.5%; Asian-alone 6.8% / 156,983; Hispanic 44.1%)',
       'https://www.houstontx.gov/planning/Demographics/docs_pdfs/2023demographics/City-County-Metro-Race-Ethnicity-ACS-2023-Landscape.pdf',
@@ -147,7 +175,11 @@ export const CITIES: Record<CityId, CityConfig> = {
     shortName: 'Dallas',
     totalPop: DALLAS_ACS_POP,
     femalePct: DALLAS_ACS_FEMALE_PCT,
-    femaleCount: Math.round(DALLAS_ACS_POP * DALLAS_ACS_FEMALE_PCT), // 652,376
+    femaleCount: DALLAS_FEMALE,
+    maleCount: DALLAS_MALE,
+    malePct: DALLAS_MALE / DALLAS_ACS_POP,
+    maleNNote:
+      'Male N = ACS total − female = 1,299,553 − 652,376 = 647,177 (derived; not invented).',
     ethnicity: {
       white_nh: 0.282,
       black: 0.234,
@@ -159,11 +191,13 @@ export const CITIES: Record<CityId, CityConfig> = {
     },
     ethnicityNote:
       'ACS 2019–2023 / US Civic Data mutually exclusive: White NH 28.2% (366,213), Black 23.4% (304,323), Hispanic 41.9% (545,002), Two+/other ~2.9% (AIAN 0.2% + NHPI 0.1% + Some other 0.2% + Two or more 2.4%). ACS Asian-alone 3.6% (47,201) is split using CensusDepth ACS 2023 Asian subgroups (% of city pop): Asian Indian 1.0% → Indian; remainder 2.6% → Asian (East/Southeast — Chinese 0.7%, Vietnamese 0.5%, Filipino 0.3%, Korean 0.2%, plus residual non-Indian Asian). Shares sum 100%. QuickFacts mutually exclusive-style (White NH 27.6%, Black 23.2%, Hispanic 42.6%, Asian 3.9%) is footnoted only.',
+    ethnicitySexAssumption:
+      'Ethnicity shares are city-level ACS (not sex-split). Same distribution applied to women and men pools.',
     under18Pct: 0.239,
     age65PlusPct: 0.118,
     nBasis: 'acs',
     nBasisNote:
-      'Generator N = ACS 2019–2023 female count (pop 1,299,553 × 50.2% ≈ 652,376). ACS 5-year microtable was fetched (CensusDepth / US Civic Data); not the QuickFacts Jul 2025 fallback of 1,329,491 × 50.0% ≈ 664,746.',
+      'Female generator N = ACS 2019–2023 female count (pop 1,299,553 × 50.2% ≈ 652,376). Male N = total − female ≈ 647,177. ACS 5-year microtable was fetched (CensusDepth / US Civic Data); not the QuickFacts Jul 2025 fallback.',
     sources: [
       'U.S. Census Bureau ACS 2019–2023 5-year — Dallas city, TX (via US Civic Data / CensusDepth): pop 1,299,553; female 50.2%',
       'US Civic Data race & ethnicity counts (White NH 366,213; Black 304,323; Asian 47,201; Hispanic 545,002)',
@@ -177,7 +211,7 @@ export const CITIES: Record<CityId, CityConfig> = {
       pop: 1_329_491,
       femalePct: 0.5,
       yearLabel: 'Jul 1 2025',
-      note: 'Footnote only. ACS 5-year was fetched so N is ACS-based (652,376), not QuickFacts 664,746. Under-18 23.9% used for age mix / adult-available display.',
+      note: 'Footnote only. ACS 5-year was fetched so N is ACS-based, not QuickFacts. Under-18 23.9% used for age mix / adult-available display.',
     },
   },
 };
@@ -196,8 +230,32 @@ export function adultShare(city: CityConfig): number {
   return 1 - city.under18Pct;
 }
 
+export function poolCount(
+  city: CityConfig,
+  sex: 'female' | 'male',
+): number {
+  return sex === 'female' ? city.femaleCount : city.maleCount;
+}
+
+export function adultEstimate(
+  city: CityConfig,
+  sex: 'female' | 'male',
+): number {
+  return Math.round(poolCount(city, sex) * adultShare(city));
+}
+
+/** @deprecated Prefer adultEstimate(city, 'female'). */
 export function adultWomenEstimate(city: CityConfig): number {
-  return Math.round(city.femaleCount * adultShare(city));
+  return adultEstimate(city, 'female');
+}
+
+export function adultMenEstimate(city: CityConfig): number {
+  return adultEstimate(city, 'male');
+}
+
+export function sexLabel(sex: 'female' | 'male', plural = true): string {
+  if (plural) return sex === 'female' ? 'women' : 'men';
+  return sex === 'female' ? 'woman' : 'man';
 }
 
 export function ethnicityRows(
