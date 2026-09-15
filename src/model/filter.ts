@@ -1,10 +1,15 @@
 import type { BreakdownItem, FilterResult, Filters, Woman } from './types';
+import {
+  POPULATION_SIZE,
+  TYLER_ADULT_WOMEN_ESTIMATE,
+} from './population';
 
 type Dim =
   | 'age'
   | 'available'
   | 'height'
   | 'weight'
+  | 'ethnicity'
   | 'hair'
   | 'eye'
   | 'income'
@@ -15,6 +20,7 @@ type Dim =
   | 'cup';
 
 const TRAIT_DIMS: Dim[] = [
+  'ethnicity',
   'height',
   'weight',
   'hair',
@@ -32,7 +38,6 @@ export function matchesFilters(
   f: Filters,
   opts?: { only?: ReadonlySet<Dim> },
 ): boolean {
-  // If `only` is set, evaluate just those dimensions (+ always nothing else).
   const check = (dim: Dim) => !opts?.only || opts.only.has(dim);
 
   if (check('age')) {
@@ -46,6 +51,15 @@ export function matchesFilters(
   }
   if (check('weight')) {
     if (w.weightLb < f.weightMinLb || w.weightLb > f.weightMaxLb) return false;
+  }
+  if (check('ethnicity')) {
+    if (
+      f.ethnicity &&
+      f.ethnicity.length > 0 &&
+      !f.ethnicity.includes(w.ethnicity)
+    ) {
+      return false;
+    }
   }
   if (check('hair')) {
     if (f.hair && f.hair.length > 0 && !f.hair.includes(w.hair)) return false;
@@ -85,6 +99,8 @@ export function matchesFilters(
 
 function isActive(f: Filters, dim: Dim): boolean {
   switch (dim) {
+    case 'ethnicity':
+      return !!(f.ethnicity && f.ethnicity.length > 0);
     case 'height':
       return f.heightMinIn > 54 || f.heightMaxIn < 78;
     case 'weight':
@@ -111,6 +127,7 @@ function isActive(f: Filters, dim: Dim): boolean {
 }
 
 const LABELS: Record<string, string> = {
+  ethnicity: 'Ethnicity',
   height: 'Height',
   weight: 'Weight',
   hair: 'Hair color',
@@ -145,20 +162,29 @@ export function evaluate(population: Woman[], f: Filters): FilterResult {
   }
 
   const percent = availablePool === 0 ? 0 : (matching / availablePool) * 100;
+
+  // Scale synthetic available share → Tyler adult women, then apply match %.
+  const availableShare = population.length === 0 ? 0 : availablePool / population.length;
+  const cityScaledAvailable = Math.round(
+    TYLER_ADULT_WOMEN_ESTIMATE * availableShare,
+  );
+  const cityScaledMatching =
+    availablePool === 0
+      ? 0
+      : Math.round(cityScaledAvailable * (matching / availablePool));
+
   const active = TRAIT_DIMS.filter((d) => isActive(filters, d));
   const breakdown: BreakdownItem[] = [];
 
   for (let i = 0; i < active.length; i++) {
     const dim = active[i]!;
 
-    // Alone: this trait + age + available
     const aloneSet = new Set<Dim>(['age', 'available', dim]);
     let alone = 0;
     for (const w of basePass) {
       if (matchesFilters(w, filters, { only: aloneSet })) alone++;
     }
 
-    // Sequential: age + available + first i+1 active traits
     const seqSet = new Set<Dim>(['age', 'available', ...active.slice(0, i + 1)]);
     let seq = 0;
     for (const w of basePass) {
@@ -178,6 +204,8 @@ export function evaluate(population: Woman[], f: Filters): FilterResult {
     matching,
     percent,
     totalGenerated: population.length,
+    cityScaledMatching,
+    cityScaledAvailable,
     breakdown,
   };
 }
@@ -194,3 +222,6 @@ export function inchesToFeetLabel(inches: number): string {
   const rem = Math.round(inches % 12);
   return `${whole}'${rem}"`;
 }
+
+/** Re-export for UI that needs the frame size. */
+export { POPULATION_SIZE, TYLER_ADULT_WOMEN_ESTIMATE };

@@ -1,11 +1,17 @@
-import type { Filters, HairColor, EyeColor, Education, CupSize } from '../model/types';
+import type { Filters, HairColor, EyeColor, Education, CupSize, Ethnicity } from '../model/types';
 import {
   CUP_OPTIONS,
   DEFAULT_FILTERS,
   EDUCATION_OPTIONS,
+  ETHNICITY_OPTIONS,
   EYE_OPTIONS,
   HAIR_OPTIONS,
 } from '../model/types';
+import {
+  TYLER_ACS_FEMALE_COUNT,
+  TYLER_ACS_POPULATION,
+  TYLER_QUICKFACTS_POP_2025,
+} from '../model/sources';
 import { inchesToFeetLabel } from '../model/filter';
 
 interface Props {
@@ -71,14 +77,23 @@ export function FilterSidebar({ filters, onChange }: Props) {
       </section>
 
       <section className="filter-block">
-        <label className="block-label">Region</label>
+        <label className="block-label">
+          Region <span className="tag sourced">Tyler, TX</span>
+        </label>
         <select
           value={filters.region}
-          onChange={() => set({ region: 'US' })}
+          onChange={() => set({ region: 'tyler_tx' })}
           aria-label="Region"
         >
-          <option value="US">United States (women)</option>
+          <option value="tyler_tx">Tyler, TX (city dating pool)</option>
         </select>
+        <p className="hint" style={{ marginTop: '0.35rem' }}>
+          ACS pop {TYLER_ACS_POPULATION.toLocaleString()} · ~{TYLER_ACS_FEMALE_COUNT.toLocaleString()} women
+          <br />
+          <span className="muted">
+            QuickFacts Jul 2025 est. {TYLER_QUICKFACTS_POP_2025.toLocaleString()} (footnote)
+          </span>
+        </p>
         <label className="check-row">
           <input
             type="checkbox"
@@ -157,6 +172,16 @@ export function FilterSidebar({ filters, onChange }: Props) {
           />
         </div>
       </section>
+
+      <ChipGroup
+        label="Ethnicity"
+        tag="sourced"
+        options={ETHNICITY_OPTIONS}
+        selected={filters.ethnicity}
+        onToggle={(v) =>
+          set({ ethnicity: toggleIn(filters.ethnicity, v as Ethnicity) })
+        }
+      />
 
       <ChipGroup
         label="Hair color"

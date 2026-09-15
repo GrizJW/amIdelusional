@@ -23,11 +23,20 @@ export type Education =
 
 export type CupSize = 'AA' | 'A' | 'B' | 'C' | 'D' | 'DD' | 'DDD+';
 
+/** Mutually exclusive race/ethnicity filter set (ACS-style for Tyler city). */
+export type Ethnicity =
+  | 'white_nh'
+  | 'black'
+  | 'hispanic'
+  | 'asian'
+  | 'other';
+
 export interface Woman {
   age: number;
   heightIn: number;
   weightLb: number;
   bmi: number;
+  ethnicity: Ethnicity;
   hair: HairColor;
   eye: EyeColor;
   education: Education;
@@ -47,6 +56,7 @@ export interface Filters {
   heightMaxIn: number;
   weightMinLb: number;
   weightMaxLb: number;
+  ethnicity: Ethnicity[] | null;
   hair: HairColor[] | null;
   eye: EyeColor[] | null;
   incomeMin: number;
@@ -56,7 +66,7 @@ export interface Filters {
   facePiercings: 'any' | 'yes' | 'no';
   bodyPiercings: 'any' | 'yes' | 'no';
   cup: CupSize[] | null;
-  region: 'US';
+  region: 'tyler_tx';
   availableOnly: boolean;
 }
 
@@ -65,6 +75,10 @@ export interface FilterResult {
   matching: number;
   percent: number;
   totalGenerated: number;
+  /** City-scaled estimate of available adult women in Tyler matching filters. */
+  cityScaledMatching: number;
+  /** City-scaled estimate of Tyler adult available women in the age band. */
+  cityScaledAvailable: number;
   breakdown: BreakdownItem[];
 }
 
@@ -76,6 +90,14 @@ export interface BreakdownItem {
   /** Share remaining after this filter is applied in sequence (order as shown). */
   sequentialPercent: number;
 }
+
+export const ETHNICITY_OPTIONS: { value: Ethnicity; label: string }[] = [
+  { value: 'white_nh', label: 'White (non-Hispanic)' },
+  { value: 'black', label: 'Black / African American' },
+  { value: 'hispanic', label: 'Hispanic or Latino' },
+  { value: 'asian', label: 'Asian' },
+  { value: 'other', label: 'Two or more / other' },
+];
 
 export const HAIR_OPTIONS: { value: HairColor; label: string }[] = [
   { value: 'black', label: 'Black' },
@@ -120,6 +142,7 @@ export const DEFAULT_FILTERS: Filters = {
   heightMaxIn: 72,
   weightMinLb: 90,
   weightMaxLb: 250,
+  ethnicity: null,
   hair: null,
   eye: null,
   incomeMin: 0,
@@ -129,6 +152,6 @@ export const DEFAULT_FILTERS: Filters = {
   facePiercings: 'any',
   bodyPiercings: 'any',
   cup: null,
-  region: 'US',
+  region: 'tyler_tx',
   availableOnly: true,
 };

@@ -24,7 +24,7 @@ export default function App() {
         <div>
           <h1>amIdelusional</h1>
           <p className="tagline">
-            Dating-pool calculator · correlated traits · US women
+            Dating-pool calculator · correlated traits · Tyler, TX
           </p>
         </div>
         <p className="top-disclaimer">{DISCLAIMER}</p>
@@ -43,7 +43,7 @@ export default function App() {
       </div>
 
       <footer className="footer muted">
-        Entertainment model · adults 18+ only · v0.1.0
+        Entertainment model · adults 18+ only · Tyler, TX · v0.1.1
       </footer>
     </div>
   );

@@ -1,8 +1,8 @@
 {
   "name": "amidelusional",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Interactive dating-pool calculator with correlated trait filters (entertainment model)",
+  "description": "Interactive Tyler, TX dating-pool calculator with correlated trait filters including ethnicity (entertainment model)",
   "type": "module",
   "author": "GrizJW",
   "license": "MIT",
@@ -31,7 +31,7 @@
   "build": {
     "appId": "com.grizjw.amidelusional",
     "productName": "amIdelusional",
-    "copyright": "Copyright © 2026 GrizJW",
+    "copyright": "Copyright \u00a9 2026 GrizJW",
     "directories": {
       "output": "release"
     },
